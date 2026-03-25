@@ -1,57 +1,69 @@
 import cv2                          # OpenCV - captura vídeo da webcam e processa imagens
 import numpy as np                  # Arrays - Usado pelo OpenCV e YOLO
 from ultralytics import YOLO        # Modelo de visão computacional que detecta objetos
-import paho.mqtt.client as mqtt     # 
-import json
-import time
-from datetime import datetime
+import paho.mqtt.client as mqtt     # Cliente MQTT - envia mensagens para o broker
+import json                         # formatação dos dados em json para o envio
+import time                         # cooldown para detecções
+from datetime import datetime       # Marcação do horário exato para cada detecção
+
+## Ideias
+
+# Percepcação de x y z
+# Dar uma olhada no ligação com o arena para input de dados
 
 # ============ CONFIGURAÇÕES ============
-MQTT_BROKER = "localhost"
-MQTT_PORT = 1883
-MQTT_TOPIC = "fabrica/esteira/objeto"
+MQTT_BROKER = "localhost"           # Endereço do MQTT -> O localhost sigifica que ele está rodando na mesma máquina
+MQTT_PORT = 1883                    # Porta padrão para o MQTT
+MQTT_TOPIC = "fabrica/esteira/objeto"   # Ideia parecida com a assinatura Pub/Sub : O MQTT está enviando os dados para tópico e quem estiver assinando pode receber os dados
 
 # Inicializa o modelo YOLO (usa modelo pré-treinado leve)
-# Para objetos da sua fábrica, usamos um modelo genérico
-model = YOLO('yolov8n.pt')  # 'n' = nano (mais leve, roda em CPU)
+
+# Para objetos de uma fábrica simples, usado um modelo genérico
+model = YOLO('yolov8n.pt')  # Modelo neural pré-treinado 'n' = nano (mais leve, roda em CPU), 80 tipos diferentes de objetos
 
 # Dicionário para rastrear objetos já detectados (evita duplicatas)
-objetos_detectados = set()
+objetos_detectados = set()                  # Conjunto vazio que não permite duplicatas
 tempo_ultima_deteccao = {}
 DETECTION_COOLDOWN = 4  # segundos
 
-# ============ MQTT ============
-def conectar_mqtt():
+# ============ MQTT ============            # Client: qualquer dispositivo ou programa que se conecta ao Broker para enviar ou receber informações.
+
+def conectar_mqtt():                    
     """Conecta ao broker MQTT"""
-    client = mqtt.Client()
-    try:
-        client.connect(MQTT_BROKER, MQTT_PORT, 60)
+    client = mqtt.Client()                              # Criar um cliente do MQTT
+    try:                                        
+        client.connect(MQTT_BROKER, MQTT_PORT, 60)      # método que conecta ao broker, 60 segundos de tempo limite
         print(f" Conectado ao MQTT broker em {MQTT_BROKER}:{MQTT_PORT}")
         return client
     except Exception as e:
         print(f" Erro ao conectar MQTT: {e}")
         return None
+    
+
 
 def publicar_evento(client, objeto, confianca):
     """Publica a detecção no MQTT"""
-    if client is None:
+    if client is None:                                   # Caso tenha dado algum erro para criar o client
         return
     
     evento = {
         "timestamp": datetime.now().isoformat(),
         "objeto": objeto,
         "confianca": round(float(confianca), 2),
-        "id": f"{objeto}_{int(time.time())}"
+        "id": f"{objeto}_{int(time.time())}"             # Retorna um timestamp Unix (segundos desde 1970)
     }
     
-    client.publish(MQTT_TOPIC, json.dumps(evento))
+    client.publish(MQTT_TOPIC, json.dumps(evento))       # Envia uma mensagem para o MQTT, utilizando o MQTT_TOPIC (canal), transformando o dicionário evento em .json 
     print(f" Publicado: {evento}")
+
+
+
 
 # ============ PROCESSAMENTO ============
 def processar_frame(frame, client):
     """Processa um frame da webcam e publica detecções"""
     # Executa inferência YOLO
-    results = model(frame, verbose=False)
+    results = model(frame, verbose=False)                 # frame = passa a imagem para a IA analisar ; verbose = False : não mostra as mensagens de progresso 
     
     for r in results:
         boxes = r.boxes
